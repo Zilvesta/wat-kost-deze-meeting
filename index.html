@@ -1,169 +1,168 @@
 <!DOCTYPE html>
 <html lang="nl">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Wat kost deze meeting?</title>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      body {
-        background: #000;
-        color: #a3e635;
-        font-family: "Share Tech Mono", monospace;
-        text-shadow: 0 0 10px #a3e635, 0 0 20px #84cc16;
-        padding: 2rem;
-      }
-      .tabular-nums {
-        font-variant-numeric: tabular-nums;
-      }
-      button {
-        cursor: pointer;
-      }
-      input {
-        background: rgba(30, 58, 17, 0.3);
-        border: 1px solid rgba(132, 204, 22, 0.3);
-        border-radius: 6px;
-        padding: 4px 8px;
-        color: #a3e635;
-      }
-    </style>
-  </head>
-  <body>
-    <h1 style="font-size: 3rem; font-weight: 900;">Wat kost deze meeting?</h1>
-    <div id="app"></div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wat kost deze meeting?</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <style>
+    :root { --lime:#a3e635; --lime2:#84cc16; --bg:#000; --line:#2a3f17; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--lime); font-family:"Share Tech Mono", monospace; text-shadow:0 0 10px var(--lime), 0 0 20px var(--lime2); padding:24px; }
+    h1 { font-size: clamp(28px,4vw,56px); margin:0 0 8px; font-weight:900; }
+    .big { font-size: clamp(40px,8vw,96px); font-weight:900; line-height:1; }
+    .nums { font-variant-numeric: tabular-nums; }
+    .muted { opacity:.75 }
+    .row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+    input[type="text"], input[type="number"] {
+      background: rgba(30,58,17,.3); border:1px solid rgba(132,204,22,.35); color:var(--lime);
+      border-radius:8px; padding:8px 10px;
+    }
+    input[type="number"]{ width:90px; }
+    button { cursor:pointer; border:0; border-radius:10px; padding:10px 14px; color:#d9f99d; background:#1a2b10; }
+    button:hover{ filter:brightness(1.1) }
+    .primary { background:#365314; }
+    .warn { background:#78350f; }
+    .ghost { background:#111; color:#cbd5e1; }
+    .grid { margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
+    .right { margin-left:auto; }
+    .hint { margin-top:16px; font-size:12px; opacity:.6 }
+    .controls { display:flex; gap:8px; margin-top:16px; }
+    .card { background:#0b1307; border:1px solid rgba(132,204,22,.2); border-radius:14px; padding:12px; }
+  </style>
+</head>
+<body>
+  <h1>Wat kost deze meeting?</h1>
 
-    <script>
-      let people = JSON.parse(localStorage.getItem("meeting_people") || "[]");
-      if (people.length === 0) {
-        people = [
-          { name: "Strategist", rate: 95 },
-          { name: "Creative", rate: 85 },
-          { name: "Account", rate: 80 },
-        ];
-      }
+  <div id="total" class="big nums">€ 0,00</div>
+  <div id="meta" class="muted" style="margin-top:6px;">Tijd: 00:00:00 | € 0,00/s</div>
 
-      let running = false;
-      let startTs = null;
-      let accumulated = 0;
+  <div class="grid">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+      <strong>Deelnemers</strong>
+      <button id="addBtn" class="primary">+ Voeg deelnemer toe</button>
+      <div class="right muted">Tarief = €/uur • Kosten lopen realtime op</div>
+    </div>
+    <div id="list"></div>
+  </div>
 
-      const app = document.getElementById("app");
+  <div class="controls">
+    <button id="startBtn" class="primary">▶ Start</button>
+    <button id="pauseBtn" class="warn">⏸ Pauzeer</button>
+    <button id="resetBtn" class="ghost">⟳ Reset</button>
+  </div>
 
-      function formatMoney(n) {
-        return n.toLocaleString("nl-NL", {
-          style: "currency",
-          currency: "EUR",
-          maximumFractionDigits: 2,
-        });
-      }
+  <p class="hint">Tip: druk op <b>F</b> voor fullscreen • Gegevens worden lokaal opgeslagen</p>
 
-      function formatTime(s) {
-        s = Math.floor(s);
-        const h = String(Math.floor(s / 3600)).padStart(2, "0");
-        const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-        const sec = String(s % 60).padStart(2, "0");
-        return `${h}:${m}:${sec}`;
-      }
+  <script>
+    // ---------- State ----------
+    let people = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem("meeting_people") || "[]");
+      people = Array.isArray(saved) && saved.length ? saved : [
+        { name: "Strategist", rate: 95 },
+        { name: "Creative",  rate: 85 },
+        { name: "Account",   rate: 80 },
+      ];
+    } catch (_) {
+      people = [{ name: "Strategist", rate: 95 }];
+    }
 
-      function render() {
-        const elapsed = running && startTs ? accumulated + (performance.now() - startTs) / 1000 : accumulated;
-        const totalRate = people.reduce((sum, p) => sum + (p.rate || 0), 0);
-        const eurosPerSecond = totalRate / 3600;
-        const totalCost = eurosPerSecond * elapsed;
+    let running = false;       // loopt de timer?
+    let startTs = null;        // performance.now() (ms) bij start
+    let accumulated = 0;       // **seconden** tot nu toe (blijft altijd seconden)
 
-        app.innerHTML = `
-          <div style="margin-top: 2rem;">
-            <div style="font-size: 4rem; font-weight: 900;" class="tabular-nums">${formatMoney(totalCost)}</div>
-            <div style="margin-top: .5rem; opacity:.8;">Tijd: ${formatTime(elapsed)} | ${formatMoney(eurosPerSecond)}/s</div>
+    // ---------- Helpers ----------
+    const € = (n) => n.toLocaleString("nl-NL",{style:"currency",currency:"EUR",maximumFractionDigits:2});
+    const fmtTime = (s) => {
+      s = Math.max(0, Math.floor(s));
+      const h = String(Math.floor(s/3600)).padStart(2,"0");
+      const m = String(Math.floor((s%3600)/60)).padStart(2,"0");
+      const sec = String(s%60).padStart(2,"0");
+      return `${h}:${m}:${sec}`;
+    };
+    const elapsedSeconds = () => running && startTs!=null ? accumulated + (performance.now()-startTs)/1000 : accumulated;
+    const save = () => localStorage.setItem("meeting_people", JSON.stringify(people));
 
-            <div style="margin-top: 2rem; border-top: 1px solid #365314; padding-top: 1rem;">
-              <h2 style="font-size: 1.5rem; font-weight: 700;">Deelnemers</h2>
-              ${people
-                .map(
-                  (p, i) => `
-                <div style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;">
-                  <input value="${p.name}" oninput="updatePerson(${i}, 'name', this.value)" />
-                  <input type="number" value="${p.rate}" oninput="updatePerson(${i}, 'rate', this.value)" style="width:5rem;" />
-                  <span style="margin-left:auto;">${formatMoney((p.rate / 3600) * elapsed)}</span>
-                  <button onclick="removePerson(${i})">🗑</button>
-                </div>`
-                )
-                .join("")}
-              <button onclick="addPerson()" style="margin-top:1rem;background:#365314;padding:.3rem .7rem;border-radius:6px;">+ Voeg deelnemer toe</button>
-            </div>
+    // ---------- DOM refs ----------
+    const totalEl = document.getElementById("total");
+    const metaEl  = document.getElementById("meta");
+    const listEl  = document.getElementById("list");
+    const startBtn= document.getElementById("startBtn");
+    const pauseBtn= document.getElementById("pauseBtn");
+    const resetBtn= document.getElementById("resetBtn");
+    const addBtn  = document.getElementById("addBtn");
 
-            <div style="margin-top:2rem;display:flex;gap:.5rem;">
-              ${
-                running
-                  ? `<button onclick="pause()" style="background:#78350f;padding:.7rem 1.2rem;border-radius:10px;">⏸ Pauzeer</button>`
-                  : `<button onclick="start()" style="background:#365314;padding:.7rem 1.2rem;border-radius:10px;">▶ Start</button>`
-              }
-              <button onclick="reset()" style="background:#1a1a1a;padding:.7rem 1.2rem;border-radius:10px;">⟳ Reset</button>
-            </div>
-          </div>
-          <p style="margin-top:2rem;font-size:.9rem;opacity:.6;">Druk op <strong>F</strong> voor fullscreen • Data wordt opgeslagen</p>
+    // ---------- Actions ----------
+    function start(){ if(running) return; startTs = performance.now(); running = true; }
+    function pause(){ if(!running||startTs==null) return; accumulated += (performance.now()-startTs)/1000; running=false; startTs=null; }
+    function reset(){ running=false; startTs=null; accumulated=0; }
+
+    function addPerson(){
+      people.push({ name:"Nieuw", rate:80 });
+      save(); render(); // rebind events
+    }
+    function removePerson(idx){
+      people.splice(idx,1);
+      save(); render();
+    }
+    function updateName(idx, value){
+      people[idx].name = value;
+      save();
+    }
+    function updateRate(idx, value){
+      const v = Number(value);
+      people[idx].rate = Number.isFinite(v) ? v : 0;
+      save();
+    }
+
+    // ---------- Render ----------
+    function render(){
+      const elapsed = elapsedSeconds();
+      const totalRate = people.reduce((s,p)=> s + (Number(p.rate)||0), 0);
+      const perSec = totalRate / 3600;
+      const cost = perSec * elapsed;
+
+      totalEl.textContent = €(cost);
+      metaEl.textContent  = `Tijd: ${fmtTime(elapsed)} | ${€(perSec)}/s`;
+
+      // lijst
+      listEl.innerHTML = "";
+      people.forEach((p, i) => {
+        const row = document.createElement("div");
+        row.className = "row card";
+        row.innerHTML = `
+          <input type="text" value="${p.name}">
+          <input type="number" value="${p.rate}">
+          <div class="right nums">${€((Number(p.rate)||0)/3600 * elapsed)}</div>
+          <button class="rm">🗑</button>
         `;
-      }
-
-      function tick() {
-        render();
-        requestAnimationFrame(tick);
-      }
-
-      function start() {
-        startTs = performance.now();
-        running = true;
-      }
-
-      function pause() {
-        accumulated += performance.now() - startTs;
-        running = false;
-        startTs = null;
-      }
-
-      function reset() {
-        running = false;
-        accumulated = 0;
-        startTs = null;
-      }
-
-      function addPerson() {
-        people.push({ name: "Nieuw", rate: 80 });
-        save();
-      }
-
-      function removePerson(i) {
-        people.splice(i, 1);
-        save();
-      }
-
-      function updatePerson(i, key, value) {
-        people[i][key] = key === "rate" ? Number(value) : value;
-        save();
-      }
-
-      function save() {
-        localStorage.setItem("meeting_people", JSON.stringify(people));
-      }
-
-      window.addPerson = addPerson;
-      window.removePerson = removePerson;
-      window.updatePerson = updatePerson;
-      window.start = start;
-      window.pause = pause;
-      window.reset = reset;
-
-      document.addEventListener("keydown", (e) => {
-        if (e.key.toLowerCase() === "f") {
-          if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen();
-          } else {
-            document.exitFullscreen();
-          }
-        }
+        const [nameInput, rateInput, , rmBtn] = row.children;
+        nameInput.addEventListener("input", e => updateName(i, e.target.value));
+        rateInput.addEventListener("input", e => updateRate(i, e.target.value));
+        rmBtn.addEventListener("click", () => removePerson(i));
+        listEl.appendChild(row);
       });
+    }
 
-      tick();
-    </script>
-  </body>
+    // ---------- Loop ----------
+    function tick(){ render(); requestAnimationFrame(tick); }
+
+    // ---------- Event bindings ----------
+    startBtn.addEventListener("click", start);
+    pauseBtn.addEventListener("click", pause);
+    resetBtn.addEventListener("click", reset);
+    addBtn.addEventListener("click", addPerson);
+
+    document.addEventListener("keydown", (e)=>{
+      if (e.key.toLowerCase() === "f"){
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+      }
+    });
+
+    // go
+    render(); tick();
+  </script>
+</body>
 </html>
