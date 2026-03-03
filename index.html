@@ -10,26 +10,22 @@
 <style>
 :root { --lime:#a3e635; --lime2:#84cc16; --bg:#000; --line:#2a3f17; }
 * { box-sizing:border-box; }
-
-body {
-  margin:0;
-  background:var(--bg);
-  color:var(--lime);
+body{
+  margin:0; background:var(--bg); color:var(--lime);
   font-family:"Share Tech Mono", monospace;
   text-shadow:0 0 10px var(--lime), 0 0 20px var(--lime2);
   padding:24px;
 }
-
-h1 { font-size:clamp(28px,4vw,56px); margin:0 0 8px; font-weight:900; }
-.big { font-size:clamp(40px,8vw,96px); font-weight:900; line-height:1; }
-.nums { font-variant-numeric:tabular-nums; }
-.muted { opacity:.75; }
-.grid { margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
-.row { display:flex; align-items:center; gap:8px; margin-top:8px; }
-.card { background:#0b1307; border:1px solid rgba(132,204,22,.2); border-radius:14px; padding:12px; }
-.right { margin-left:auto; }
-
-input[type="text"], input[type="number"] {
+h1{ font-size:clamp(28px,4vw,56px); margin:0 0 8px; font-weight:900; }
+.big{ font-size:clamp(40px,8vw,96px); font-weight:900; line-height:1; }
+.nums{ font-variant-numeric:tabular-nums; }
+.muted{ opacity:.75; }
+.grid{ margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
+.row{ display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.card{ background:#0b1307; border:1px solid rgba(132,204,22,.2); border-radius:14px; padding:12px; }
+.right{ margin-left:auto; }
+label{ font-size:12px; opacity:.8; }
+input[type="text"], input[type="number"], select {
   background:rgba(30,58,17,.3);
   border:1px solid rgba(132,204,22,.35);
   color:var(--lime);
@@ -37,43 +33,48 @@ input[type="text"], input[type="number"] {
   padding:8px 10px;
   outline:none;
 }
-
-input[type="number"] { width:90px; }
-
-button {
-  cursor:pointer;
-  border:0;
-  border-radius:10px;
-  padding:10px 14px;
-  color:#d9f99d;
-  background:#1a2b10;
+input[type="number"]{ width:110px; }
+select{ min-width:170px; }
+button{
+  cursor:pointer; border:0; border-radius:10px; padding:10px 14px;
+  color:#d9f99d; background:#1a2b10;
 }
-
-button:hover { filter:brightness(1.1); }
-.primary { background:#365314; }
-.warn { background:#78350f; }
-.ghost { background:#111; color:#cbd5e1; }
-
-.controls { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
-.hint { margin-top:16px; font-size:12px; opacity:.6; }
-.topline { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+button:hover{ filter:brightness(1.1); }
+.primary{ background:#365314; }
+.warn{ background:#78350f; }
+.ghost{ background:#111; color:#cbd5e1; }
+.controls{ display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+.hint{ margin-top:16px; font-size:12px; opacity:.6; }
+.topline{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+.small{ font-size:12px; opacity:.75; }
+.pill{ padding:6px 10px; border-radius:999px; border:1px solid rgba(132,204,22,.25); background:#071004; }
 </style>
 </head>
 
 <body>
-
 <h1>Wat kost deze meeting?</h1>
 
 <div id="total" class="big nums">EUR 0,00</div>
 <div id="meta" class="muted" style="margin-top:6px;">Tijd: 00:00:00 | EUR 0,00 per seconde</div>
 
+<!-- FUNCTIES -->
+<div class="grid">
+  <div class="topline">
+    <strong>Functies</strong>
+    <button id="addRoleBtn" class="primary">Voeg functie toe</button>
+    <div class="right muted">Standaardtarieven per functie</div>
+  </div>
+  <div id="roles"></div>
+</div>
+
+<!-- DEELNEMERS -->
 <div class="grid">
   <div class="topline">
     <strong>Deelnemers</strong>
-    <button id="addBtn" class="primary">Voeg deelnemer toe</button>
-    <div class="right muted">Tarief is euro per uur - Kosten lopen realtime op</div>
+    <button id="addPersonBtn" class="primary">Voeg deelnemer toe</button>
+    <div class="right muted">Kies functie of override tarief</div>
   </div>
-  <div id="list"></div>
+  <div id="people"></div>
 </div>
 
 <div class="controls">
@@ -85,33 +86,69 @@ button:hover { filter:brightness(1.1); }
 <p class="hint">Tip: druk op F voor fullscreen - Gegevens worden lokaal opgeslagen</p>
 
 <script>
-// ---------- State ----------
+// ---------- Storage keys ----------
+const KEY_ROLES  = "meeting_roles_v1";
+const KEY_PEOPLE = "meeting_people_v2";
+
+// ---------- Defaults ----------
+function defaultRoles(){
+  return [
+    { id: uid(), title:"Strategist", desc:"Strategie / planning", rate:95 },
+    { id: uid(), title:"Creative",   desc:"Concept / design",     rate:85 },
+    { id: uid(), title:"Account",    desc:"Project / klant",      rate:80 }
+  ];
+}
+function defaultPeople(roles){
+  return [
+    { id: uid(), name:"Persoon 1", roleId: roles[0].id, override:false, rate: roles[0].rate },
+    { id: uid(), name:"Persoon 2", roleId: roles[1].id, override:false, rate: roles[1].rate }
+  ];
+}
+
+function uid(){
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+// ---------- Load ----------
+let roles = [];
 let people = [];
 
 try {
-  const saved = JSON.parse(localStorage.getItem("meeting_people") || "[]");
-  people = Array.isArray(saved) && saved.length ? saved : [
-    { name:"Strategist", rate:95 },
-    { name:"Creative", rate:85 },
-    { name:"Account", rate:80 }
-  ];
+  const savedRoles = JSON.parse(localStorage.getItem(KEY_ROLES) || "null");
+  roles = Array.isArray(savedRoles) && savedRoles.length ? savedRoles : defaultRoles();
+} catch { roles = defaultRoles(); }
+
+try {
+  const savedPeople = JSON.parse(localStorage.getItem(KEY_PEOPLE) || "null");
+  if (Array.isArray(savedPeople) && savedPeople.length) {
+    people = savedPeople;
+  } else {
+    people = defaultPeople(roles);
+  }
 } catch {
-  people = [{ name:"Strategist", rate:95 }];
+  people = defaultPeople(roles);
 }
 
+// Ensure each person has valid roleId
+function ensurePeopleValid(){
+  if (!roles.length) roles = defaultRoles();
+  const roleIds = new Set(roles.map(r=>r.id));
+  people.forEach(p=>{
+    if (!roleIds.has(p.roleId)) p.roleId = roles[0].id;
+    if (!p.override) p.rate = roleRate(p.roleId);
+  });
+}
+ensurePeopleValid();
+
+// ---------- Timer ----------
 let running = false;
 let startTs = null;
-let accumulated = 0;
+let accumulated = 0; // seconds
 
 // ---------- Helpers ----------
 function euro(n){
-  return n.toLocaleString("nl-NL", {
-    style:"currency",
-    currency:"EUR",
-    maximumFractionDigits:2
-  });
+  return n.toLocaleString("nl-NL", { style:"currency", currency:"EUR", maximumFractionDigits:2 });
 }
-
 function formatTime(s){
   s = Math.max(0, Math.floor(s));
   const h = String(Math.floor(s/3600)).padStart(2,"0");
@@ -119,103 +156,197 @@ function formatTime(s){
   const sec = String(s%60).padStart(2,"0");
   return h + ":" + m + ":" + sec;
 }
-
 function elapsedSeconds(){
-  if(running && startTs != null){
-    return accumulated + (performance.now() - startTs) / 1000;
-  }
+  if(running && startTs != null) return accumulated + (performance.now()-startTs)/1000;
   return accumulated;
 }
-
-function save(){
-  localStorage.setItem("meeting_people", JSON.stringify(people));
+function saveAll(){
+  localStorage.setItem(KEY_ROLES, JSON.stringify(roles));
+  localStorage.setItem(KEY_PEOPLE, JSON.stringify(people));
 }
+function roleById(id){ return roles.find(r=>r.id===id) || null; }
+function roleRate(id){ const r = roleById(id); return r ? (Number(r.rate)||0) : 0; }
 
 // ---------- DOM ----------
 const totalEl = document.getElementById("total");
 const metaEl  = document.getElementById("meta");
-const listEl  = document.getElementById("list");
+const rolesEl = document.getElementById("roles");
+const peopleEl= document.getElementById("people");
 
 const startBtn = document.getElementById("startBtn");
 const pauseBtn = document.getElementById("pauseBtn");
 const resetBtn = document.getElementById("resetBtn");
-const addBtn   = document.getElementById("addBtn");
 
-// ---------- Actions ----------
+const addRoleBtn   = document.getElementById("addRoleBtn");
+const addPersonBtn = document.getElementById("addPersonBtn");
+
+// ---------- Actions: timer ----------
 function start(){
   if(running) return;
   startTs = performance.now();
   running = true;
 }
-
 function pause(){
   if(!running || startTs == null) return;
-  accumulated += (performance.now() - startTs) / 1000;
+  accumulated += (performance.now()-startTs)/1000;
   running = false;
   startTs = null;
 }
-
 function reset(){
   running = false;
   startTs = null;
   accumulated = 0;
 }
 
+// ---------- Actions: roles ----------
+function addRole(){
+  roles.push({ id: uid(), title:"Nieuwe functie", desc:"Omschrijving", rate:80 });
+  ensurePeopleValid();
+  saveAll();
+  render();
+}
+function removeRole(roleId){
+  if (roles.length <= 1) return; // keep at least one
+  roles = roles.filter(r=>r.id!==roleId);
+  ensurePeopleValid();
+  saveAll();
+  render();
+}
+function updateRole(roleId, key, value){
+  const r = roleById(roleId);
+  if(!r) return;
+  if (key === "rate") {
+    const v = Number(value);
+    r.rate = Number.isFinite(v) ? v : 0;
+    // update non-overridden people using this role
+    people.forEach(p=>{
+      if (p.roleId === roleId && !p.override) p.rate = r.rate;
+    });
+  } else {
+    r[key] = value;
+  }
+  saveAll();
+  render(); // to update dropdown labels + computed totals
+}
+
+// ---------- Actions: people ----------
 function addPerson(){
-  people.push({ name:"Nieuw", rate:80 });
-  save();
+  const firstRole = roles[0];
+  people.push({ id: uid(), name:"Nieuw", roleId:firstRole.id, override:false, rate:firstRole.rate });
+  saveAll();
   render();
 }
-
-function removePerson(i){
-  people.splice(i,1);
-  save();
+function removePerson(personId){
+  people = people.filter(p=>p.id!==personId);
+  saveAll();
   render();
 }
+function updatePerson(personId, key, value){
+  const p = people.find(x=>x.id===personId);
+  if(!p) return;
 
-function updateName(i,val){
-  people[i].name = val;
-  save();
-}
+  if (key === "roleId") {
+    p.roleId = value;
+    if (!p.override) p.rate = roleRate(value);
+  } else if (key === "override") {
+    p.override = !!value;
+    if (!p.override) p.rate = roleRate(p.roleId);
+  } else if (key === "rate") {
+    const v = Number(value);
+    p.rate = Number.isFinite(v) ? v : 0;
+  } else {
+    p[key] = value;
+  }
 
-function updateRate(i,val){
-  const v = Number(val);
-  people[i].rate = Number.isFinite(v) ? v : 0;
-  save();
+  saveAll();
+  render();
 }
 
 // ---------- Render ----------
 function render(){
   const elapsed = elapsedSeconds();
-  const totalRate = people.reduce((s,p)=> s + (Number(p.rate)||0),0);
+  const totalRate = people.reduce((s,p)=> s + (Number(p.rate)||0), 0);
   const perSec = totalRate / 3600;
   const cost = perSec * elapsed;
 
   totalEl.textContent = euro(cost);
-  metaEl.textContent = "Tijd: " + formatTime(elapsed) + " | " + euro(perSec) + " per seconde";
+  metaEl.textContent  = "Tijd: " + formatTime(elapsed) + " | " + euro(perSec) + " per seconde";
 
-  listEl.innerHTML = "";
+  // roles
+  rolesEl.innerHTML = "";
+  roles.forEach(r=>{
+    const row = document.createElement("div");
+    row.className = "row card";
+    row.innerHTML =
+      '<div class="pill small">ID</div>' +
+      '<input type="text" value="'+escapeHtml(r.title)+'" style="min-width:180px">' +
+      '<input type="text" value="'+escapeHtml(r.desc)+'" style="min-width:240px;flex:1">' +
+      '<input type="number" value="'+(Number(r.rate)||0)+'">' +
+      '<div class="right nums">'+euro(Number(r.rate)||0)+'/uur</div>' +
+      '<button class="rm ghost">Verwijder</button>';
 
-  people.forEach((p,i)=>{
+    const titleInput = row.children[1];
+    const descInput  = row.children[2];
+    const rateInput  = row.children[3];
+    const rmBtn      = row.children[5];
+
+    titleInput.addEventListener("input", e=>updateRole(r.id,"title",e.target.value));
+    descInput.addEventListener("input",  e=>updateRole(r.id,"desc", e.target.value));
+    rateInput.addEventListener("input",  e=>updateRole(r.id,"rate", e.target.value));
+    rmBtn.addEventListener("click", ()=>removeRole(r.id));
+
+    rolesEl.appendChild(row);
+  });
+
+  // people
+  peopleEl.innerHTML = "";
+  people.forEach(p=>{
+    const role = roleById(p.roleId);
+    const label = role ? (role.title + " - " + role.desc) : "Onbekend";
+
     const row = document.createElement("div");
     row.className = "row card";
 
+    // build options
+    let options = "";
+    roles.forEach(r=>{
+      const optLabel = escapeHtml(r.title + " - " + r.desc);
+      const sel = r.id === p.roleId ? ' selected' : '';
+      options += '<option value="'+r.id+'"'+sel+'>'+optLabel+'</option>';
+    });
+
     row.innerHTML =
-      '<input type="text" value="'+p.name+'">' +
-      '<input type="number" value="'+(Number(p.rate)||0)+'">' +
-      '<div class="right nums">'+ euro(((Number(p.rate)||0)/3600)*elapsed) +'</div>' +
-      '<button>X</button>';
+      '<input type="text" value="'+escapeHtml(p.name)+'" style="min-width:180px">' +
+      '<select>'+options+'</select>' +
+      '<label class="small"><input type="checkbox" '+(p.override?'checked':'')+'> override tarief</label>' +
+      '<input type="number" value="'+(Number(p.rate)||0)+'" '+(p.override?'':'disabled')+'>' +
+      '<div class="right nums">'+euro(((Number(p.rate)||0)/3600)*elapsed)+'</div>' +
+      '<button class="ghost">Verwijder</button>';
 
     const nameInput = row.children[0];
-    const rateInput = row.children[1];
-    const rmBtn     = row.children[3];
+    const roleSel   = row.children[1];
+    const overWrap  = row.children[2];
+    const overChk   = overWrap.querySelector("input");
+    const rateInput = row.children[3];
+    const rmBtn     = row.children[5];
 
-    nameInput.addEventListener("input", e=>updateName(i,e.target.value));
-    rateInput.addEventListener("input", e=>updateRate(i,e.target.value));
-    rmBtn.addEventListener("click", ()=>removePerson(i));
+    nameInput.addEventListener("input", e=>updatePerson(p.id,"name",e.target.value));
+    roleSel.addEventListener("change", e=>updatePerson(p.id,"roleId",e.target.value));
+    overChk.addEventListener("change", e=>updatePerson(p.id,"override",e.target.checked));
+    rateInput.addEventListener("input", e=>updatePerson(p.id,"rate",e.target.value));
+    rmBtn.addEventListener("click", ()=>removePerson(p.id));
 
-    listEl.appendChild(row);
+    peopleEl.appendChild(row);
   });
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
 // ---------- Loop ----------
@@ -228,22 +359,20 @@ function tick(){
 startBtn.addEventListener("click", start);
 pauseBtn.addEventListener("click", pause);
 resetBtn.addEventListener("click", reset);
-addBtn.addEventListener("click", addPerson);
+addRoleBtn.addEventListener("click", addRole);
+addPersonBtn.addEventListener("click", addPerson);
 
 document.addEventListener("keydown", function(e){
-  if(e.key.toLowerCase() === "f"){
-    if(!document.fullscreenElement){
-      document.documentElement.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
+  if(e.key && e.key.toLowerCase() === "f"){
+    if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
   }
 });
 
 // ---------- Init ----------
 render();
 tick();
-
 </script>
+
 </body>
 </html>
